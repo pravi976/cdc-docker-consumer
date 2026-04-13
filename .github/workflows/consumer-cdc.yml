@@ -87,6 +87,9 @@ jobs:
           echo "Pact Broker did not become ready in time."
           exit 1
 
+      - name: Install Pact Broker CLI
+        run: gem install pact_broker-client --no-document
+
       - name: Publish Pacts to Broker
         run: |
           PACT_BROKER_BASE_URL="${PACT_BROKER_BASE_URL:-http://localhost:9292}"
@@ -94,10 +97,7 @@ jobs:
           if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
             AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
           fi
-          docker run --rm \
-            -v "${GITHUB_WORKSPACE}/build/pacts:/pacts" \
-            pactfoundation/pact-cli:latest \
-            pact-broker publish /pacts \
+          pact-broker publish "${GITHUB_WORKSPACE}/build/pacts" \
             --broker-base-url "${PACT_BROKER_BASE_URL}" \
             "${AUTH_ARGS[@]}" \
             --consumer-app-version "${GITHUB_SHA}" \
@@ -114,9 +114,7 @@ jobs:
           if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
             AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
           fi
-          docker run --rm \
-            pactfoundation/pact-cli:latest \
-            pact-broker can-i-deploy \
+          pact-broker can-i-deploy \
             --broker-base-url "${PACT_BROKER_BASE_URL}" \
             "${AUTH_ARGS[@]}" \
             --pacticipant "${PACTICIPANT}" \
@@ -203,9 +201,7 @@ jobs:
           if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
             AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
           fi
-          docker run --rm \
-            pactfoundation/pact-cli:latest \
-            pact-broker record-deployment \
+          pact-broker record-deployment \
             --broker-base-url "${PACT_BROKER_BASE_URL}" \
             "${AUTH_ARGS[@]}" \
             --pacticipant "${PACTICIPANT}" \
