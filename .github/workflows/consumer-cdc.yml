@@ -51,13 +51,16 @@ jobs:
       - name: Publish Pacts to Broker
         if: ${{ secrets.PACT_BROKER_BASE_URL != '' }}
         run: |
+          AUTH_ARGS=()
+          if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
+            AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
+          fi
           docker run --rm \
             -v "${GITHUB_WORKSPACE}/build/pacts:/pacts" \
             pactfoundation/pact-cli:latest \
             pact-broker publish /pacts \
             --broker-base-url "${PACT_BROKER_BASE_URL}" \
-            --broker-username "${PACT_BROKER_USERNAME}" \
-            --broker-password "${PACT_BROKER_PASSWORD}" \
+            "${AUTH_ARGS[@]}" \
             --consumer-app-version "${GITHUB_SHA}" \
             --branch "${GITHUB_REF_NAME}"
         env:
@@ -68,12 +71,15 @@ jobs:
       - name: Can I Deploy (Consumer)
         if: ${{ secrets.PACT_BROKER_BASE_URL != '' }}
         run: |
+          AUTH_ARGS=()
+          if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
+            AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
+          fi
           docker run --rm \
             pactfoundation/pact-cli:latest \
             pact-broker can-i-deploy \
             --broker-base-url "${PACT_BROKER_BASE_URL}" \
-            --broker-username "${PACT_BROKER_USERNAME}" \
-            --broker-password "${PACT_BROKER_PASSWORD}" \
+            "${AUTH_ARGS[@]}" \
             --pacticipant "${PACTICIPANT}" \
             --version "${GITHUB_SHA}" \
             --to-environment "${DEPLOY_ENV}"
@@ -144,12 +150,15 @@ jobs:
       - name: Record Consumer Deployment in Broker
         if: ${{ secrets.PACT_BROKER_BASE_URL != '' }}
         run: |
+          AUTH_ARGS=()
+          if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
+            AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
+          fi
           docker run --rm \
             pactfoundation/pact-cli:latest \
             pact-broker record-deployment \
             --broker-base-url "${PACT_BROKER_BASE_URL}" \
-            --broker-username "${PACT_BROKER_USERNAME}" \
-            --broker-password "${PACT_BROKER_PASSWORD}" \
+            "${AUTH_ARGS[@]}" \
             --pacticipant "${PACTICIPANT}" \
             --version "${GITHUB_SHA}" \
             --environment "${DEPLOY_ENV}"
