@@ -83,6 +83,14 @@ Workflow:
 
 Push to `main` (or run manually from Actions tab) to trigger full CDC flow.
 
+Verification dashboard workflow:
+
+```text
+.github/workflows/contracts-status-dashboard.yml
+```
+
+Run it from Actions tab (`workflow_dispatch`) to see a markdown table of verification status in the job summary and artifact.
+
 Shared contract files are published under:
 
 ```text

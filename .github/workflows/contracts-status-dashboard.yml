@@ -1,0 +1,70 @@
+name: Contracts Verification Dashboard
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"
+
+env:
+  SHARED_CONTRACT_REPO: ${{ vars.SHARED_CONTRACT_REPO || 'pravi976/cdc-docker-consumer' }}
+  SHARED_CONTRACT_BRANCH: ${{ vars.SHARED_CONTRACT_BRANCH || 'contracts' }}
+
+jobs:
+  build-dashboard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Shared Contracts Repo/Branch
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.SHARED_CONTRACT_REPO }}
+          ref: ${{ env.SHARED_CONTRACT_BRANCH }}
+          path: contracts-repo
+          token: ${{ secrets.GH_REPO_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Build Verification Report
+        run: |
+          mkdir -p reports
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("contracts-repo/contracts/verification")
+          out = Path("reports/contract-verification-status.md")
+
+          lines = []
+          lines.append("# Contract Verification Status")
+          lines.append("")
+          lines.append("| Consumer | Consumer Version | Provider | Provider Version | Env | Result | Verified At |")
+          lines.append("|---|---|---|---|---|---|---|")
+
+          if root.exists():
+            files = sorted(root.rglob("*.json"))
+            for f in files:
+              try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+              except Exception:
+                continue
+              lines.append(
+                f"| {data.get('consumer','')} | {data.get('consumerVersion','')} | "
+                f"{data.get('provider','')} | {data.get('providerVersion','')} | "
+                f"{data.get('environment','')} | {data.get('result','')} | "
+                f"{data.get('verifiedAt','')} |"
+              )
+          else:
+            lines.append("| - | - | - | - | - | NO DATA | - |")
+
+          out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          print(out.read_text(encoding="utf-8"))
+          PY
+
+      - name: Add Dashboard To Job Summary
+        run: cat reports/contract-verification-status.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Dashboard Artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: contract-verification-status
+          path: reports/contract-verification-status.md
+          if-no-files-found: error
