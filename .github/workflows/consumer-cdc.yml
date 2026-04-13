@@ -35,8 +35,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
+      - name: Ensure Gradle Wrapper Is Executable
+        run: chmod +x ./gradlew
+
       - name: Run Consumer Tests and Generate Pacts
-        run: gradle --no-daemon clean test bootJar --stacktrace
+        run: ./gradlew --no-daemon clean test bootJar --stacktrace
         env:
           GH_PACKAGES_USER: ${{ github.actor }}
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
@@ -110,8 +113,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
+      - name: Ensure Gradle Wrapper Is Executable
+        run: chmod +x ./gradlew
+
       - name: Build Application Jar
-        run: gradle --no-daemon clean bootJar -x test --stacktrace
+        run: ./gradlew --no-daemon clean bootJar -x test --stacktrace
         env:
           GH_PACKAGES_USER: ${{ github.actor }}
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}

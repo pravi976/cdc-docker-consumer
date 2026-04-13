@@ -16,7 +16,7 @@ java {
 ext {
     springCloudVersion = '2023.0.3'
     cdcFrameworkVersion = findProperty('cdcFrameworkVersion') ?: System.getenv('CDC_FRAMEWORK_VERSION') ?: '1.0.0-SNAPSHOT'
-    cdcPackagesOwner = findProperty('cdcPackagesOwner') ?: System.getenv('CDC_PACKAGES_OWNER') ?: 'pravi'
+    cdcPackagesOwner = findProperty('cdcPackagesOwner') ?: System.getenv('CDC_PACKAGES_OWNER') ?: 'pravi976'
     cdcPackagesRepo = findProperty('cdcPackagesRepo') ?: System.getenv('CDC_PACKAGES_REPO') ?: 'consumer-driven-contract-testing'
 }
 
