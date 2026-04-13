@@ -5,6 +5,8 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  repository_dispatch:
+    types: [ provider-contract-updated ]
   workflow_dispatch:
 
 env:
@@ -96,7 +98,7 @@ jobs:
 
       - name: Publish Pacts to Broker
         run: |
-          PACT_BROKER_BASE_URL="${PACT_BROKER_BASE_URL:-http://localhost:9292}"
+          PACT_BROKER_BASE_URL="http://localhost:9292"
           AUTH_ARGS=()
           if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
             AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
@@ -107,13 +109,12 @@ jobs:
             --consumer-app-version "${GITHUB_SHA}" \
             --branch "${GITHUB_REF_NAME}"
         env:
-          PACT_BROKER_BASE_URL: ${{ secrets.PACT_BROKER_BASE_URL }}
           PACT_BROKER_USERNAME: ${{ secrets.PACT_BROKER_USERNAME }}
           PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
 
       - name: Can I Deploy (Consumer)
         run: |
-          PACT_BROKER_BASE_URL="${PACT_BROKER_BASE_URL:-http://localhost:9292}"
+          PACT_BROKER_BASE_URL="http://localhost:9292"
           AUTH_ARGS=()
           if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
             AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
@@ -128,7 +129,6 @@ jobs:
             --retry-while-unknown 30 \
             --retry-interval 10
         env:
-          PACT_BROKER_BASE_URL: ${{ secrets.PACT_BROKER_BASE_URL }}
           PACT_BROKER_USERNAME: ${{ secrets.PACT_BROKER_USERNAME }}
           PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
 
@@ -203,7 +203,7 @@ jobs:
 
       - name: Record Consumer Deployment in Broker
         run: |
-          PACT_BROKER_BASE_URL="${PACT_BROKER_BASE_URL:-http://localhost:9292}"
+          PACT_BROKER_BASE_URL="http://localhost:9292"
           AUTH_ARGS=()
           if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
             AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
@@ -215,6 +215,5 @@ jobs:
             --version "${GITHUB_SHA}" \
             --environment "${DEPLOY_ENV}"
         env:
-          PACT_BROKER_BASE_URL: ${{ secrets.PACT_BROKER_BASE_URL }}
           PACT_BROKER_USERNAME: ${{ secrets.PACT_BROKER_USERNAME }}
           PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
