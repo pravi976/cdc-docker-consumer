@@ -49,8 +49,11 @@ jobs:
           if-no-files-found: error
 
       - name: Publish Pacts to Broker
-        if: ${{ secrets.PACT_BROKER_BASE_URL != '' }}
         run: |
+          if [ -z "${PACT_BROKER_BASE_URL:-}" ]; then
+            echo "PACT_BROKER_BASE_URL not set. Skipping pact publish."
+            exit 0
+          fi
           AUTH_ARGS=()
           if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
             AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
@@ -69,8 +72,11 @@ jobs:
           PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
 
       - name: Can I Deploy (Consumer)
-        if: ${{ secrets.PACT_BROKER_BASE_URL != '' }}
         run: |
+          if [ -z "${PACT_BROKER_BASE_URL:-}" ]; then
+            echo "PACT_BROKER_BASE_URL not set. Skipping can-i-deploy."
+            exit 0
+          fi
           AUTH_ARGS=()
           if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
             AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
@@ -110,47 +116,56 @@ jobs:
           GH_PACKAGES_USER: ${{ github.actor }}
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Login to Docker Hub
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Build and Push Consumer Image
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/cdc-docker-consumer:${{ github.sha }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/cdc-docker-consumer:latest
+        run: |
+          if [ -z "${DOCKERHUB_USERNAME:-}" ] || [ -z "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "Docker Hub credentials not set. Skipping image build/push."
+            exit 0
+          fi
+          echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+          docker buildx create --use --name cdc-consumer-builder || true
+          docker buildx build \
+            --push \
+            -t "${DOCKERHUB_USERNAME}/cdc-docker-consumer:${GITHUB_SHA}" \
+            -t "${DOCKERHUB_USERNAME}/cdc-docker-consumer:latest" \
+            .
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up kubectl
-        if: ${{ secrets.KUBE_CONFIG_DATA != '' }}
         uses: azure/setup-kubectl@v4
 
       - name: Configure kubeconfig
-        if: ${{ secrets.KUBE_CONFIG_DATA != '' }}
         run: |
+          if [ -z "${KUBE_CONFIG_DATA:-}" ]; then
+            echo "KUBE_CONFIG_DATA not set. Skipping kubeconfig setup."
+            exit 0
+          fi
           mkdir -p "${HOME}/.kube"
           echo "${KUBE_CONFIG_DATA}" | base64 -d > "${HOME}/.kube/config"
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
 
       - name: Deploy Consumer to Kubernetes
-        if: ${{ secrets.KUBE_CONFIG_DATA != '' }}
         run: |
+          if [ -z "${KUBE_CONFIG_DATA:-}" ] || [ -z "${DOCKERHUB_USERNAME:-}" ]; then
+            echo "Kubernetes config or Docker Hub username not set. Skipping Kubernetes deploy."
+            exit 0
+          fi
           sed "s|__IMAGE__|${DOCKERHUB_USERNAME}/cdc-docker-consumer:${GITHUB_SHA}|g" k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
           kubectl rollout status deployment/cdc-docker-consumer --timeout=180s
         env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
       - name: Record Consumer Deployment in Broker
-        if: ${{ secrets.PACT_BROKER_BASE_URL != '' }}
         run: |
+          if [ -z "${PACT_BROKER_BASE_URL:-}" ]; then
+            echo "PACT_BROKER_BASE_URL not set. Skipping record deployment."
+            exit 0
+          fi
           AUTH_ARGS=()
           if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
             AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
