@@ -118,12 +118,15 @@ jobs:
           if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
             AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
           fi
+          echo "Waiting for provider deployment/verification state in Pact Broker..."
           pact-broker can-i-deploy \
             --broker-base-url "${PACT_BROKER_BASE_URL}" \
             "${AUTH_ARGS[@]}" \
             --pacticipant "${PACTICIPANT}" \
             --version "${GITHUB_SHA}" \
-            --to-environment "${DEPLOY_ENV}"
+            --to-environment "${DEPLOY_ENV}" \
+            --retry-while-unknown 30 \
+            --retry-interval 10
         env:
           PACT_BROKER_BASE_URL: ${{ secrets.PACT_BROKER_BASE_URL }}
           PACT_BROKER_USERNAME: ${{ secrets.PACT_BROKER_USERNAME }}
