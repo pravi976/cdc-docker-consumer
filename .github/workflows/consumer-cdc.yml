@@ -66,12 +66,16 @@ jobs:
 
       - name: Initialize Shared Contracts Branch If Missing
         run: |
-          if [ -d contracts-repo/.git ]; then
-            echo "Shared contracts branch exists."
+          if [ ! -d contracts-repo/.git ]; then
+            git clone "https://x-access-token:${GH_REPO_DISPATCH_TOKEN}@github.com/${SHARED_CONTRACT_REPO}.git" contracts-repo
+          fi
+          cd contracts-repo
+          if git ls-remote --exit-code --heads origin "${SHARED_CONTRACT_BRANCH}" >/dev/null 2>&1; then
+            git fetch origin "${SHARED_CONTRACT_BRANCH}"
+            git checkout -B "${SHARED_CONTRACT_BRANCH}" "origin/${SHARED_CONTRACT_BRANCH}"
+            echo "Using existing shared contracts branch: ${SHARED_CONTRACT_BRANCH}"
             exit 0
           fi
-          git clone "https://x-access-token:${GH_REPO_DISPATCH_TOKEN}@github.com/${SHARED_CONTRACT_REPO}.git" contracts-repo
-          cd contracts-repo
           git checkout --orphan "${SHARED_CONTRACT_BRANCH}"
           git rm -rf . || true
           mkdir -p contracts
@@ -80,7 +84,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git commit -m "Initialize shared contracts branch"
-          git push origin "${SHARED_CONTRACT_BRANCH}"
+          git push origin "HEAD:${SHARED_CONTRACT_BRANCH}"
           git checkout "${SHARED_CONTRACT_BRANCH}"
         env:
           GH_REPO_DISPATCH_TOKEN: ${{ secrets.GH_REPO_DISPATCH_TOKEN }}
@@ -88,6 +92,13 @@ jobs:
       - name: Publish Contract Files To Shared Branch
         run: |
           cd contracts-repo
+          if git ls-remote --exit-code --heads origin "${SHARED_CONTRACT_BRANCH}" >/dev/null 2>&1; then
+            git fetch origin "${SHARED_CONTRACT_BRANCH}"
+            git checkout -B "${SHARED_CONTRACT_BRANCH}" "origin/${SHARED_CONTRACT_BRANCH}"
+          else
+            git checkout --orphan "${SHARED_CONTRACT_BRANCH}"
+            git rm -rf . || true
+          fi
           mkdir -p "contracts/pacts/${PACTICIPANT}/${GITHUB_SHA}"
           mkdir -p "contracts/latest/${PACTICIPANT}"
           cp "${GITHUB_WORKSPACE}"/build/pacts/*.json "contracts/pacts/${PACTICIPANT}/${GITHUB_SHA}/"
@@ -109,7 +120,7 @@ jobs:
             exit 0
           fi
           git commit -m "Publish contracts for ${PACTICIPANT}@${GITHUB_SHA}"
-          git push origin "${SHARED_CONTRACT_BRANCH}"
+          git push origin "HEAD:${SHARED_CONTRACT_BRANCH}"
 
       - name: Trigger Provider Contract Verification
         run: |
