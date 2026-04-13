@@ -88,7 +88,11 @@ jobs:
           exit 1
 
       - name: Install Pact Broker CLI
-        run: gem install pact_broker-client --no-document
+        run: |
+          gem install --user-install pact_broker-client --no-document
+          ruby -e 'print Gem.user_dir' > .gem_user_dir
+          GEM_USER_DIR="$(cat .gem_user_dir)"
+          echo "${GEM_USER_DIR}/bin" >> "${GITHUB_PATH}"
 
       - name: Publish Pacts to Broker
         run: |
