@@ -1,0 +1,157 @@
+name: CDC Ephemeral Orchestrator
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  JAVA_VERSION: "17"
+  CDC_FRAMEWORK_VERSION: ${{ vars.CDC_FRAMEWORK_VERSION }}
+  CDC_PACKAGES_OWNER: ${{ vars.CDC_PACKAGES_OWNER }}
+  CDC_PACKAGES_REPO: ${{ vars.CDC_PACKAGES_REPO }}
+  CONSUMER_PACTICIPANT: supply-orders-consumer
+  PROVIDER_PACTICIPANT: supply-inventory-provider
+  DEPLOY_ENV: test
+
+jobs:
+  orchestrated-cdc:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: pact
+          POSTGRES_USER: pact
+          POSTGRES_PASSWORD: pact
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pact -d pact"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      pact-broker:
+        image: pactfoundation/pact-broker:latest
+        env:
+          PACT_BROKER_DATABASE_ADAPTER: postgres
+          PACT_BROKER_DATABASE_HOST: postgres
+          PACT_BROKER_DATABASE_NAME: pact
+          PACT_BROKER_DATABASE_USERNAME: pact
+          PACT_BROKER_DATABASE_PASSWORD: pact
+        ports:
+          - 9292:9292
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout Consumer Repo
+        uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Ensure Gradle Wrapper Is Executable (Consumer)
+        run: chmod +x ./gradlew
+
+      - name: Wait for Pact Broker
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://localhost:9292 > /dev/null; then
+              echo "Pact Broker is ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Pact Broker did not become ready in time."
+          exit 1
+
+      - name: Install Pact Broker CLI
+        run: |
+          gem install --user-install pact_broker-client --no-document
+          ruby -e 'print Gem.user_dir' > .gem_user_dir
+          GEM_USER_DIR="$(cat .gem_user_dir)"
+          echo "${GEM_USER_DIR}/bin" >> "${GITHUB_PATH}"
+
+      - name: Generate Consumer Contracts
+        run: ./gradlew --no-daemon clean test bootJar --stacktrace
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Publish Consumer Pacts
+        run: |
+          pact-broker publish "${GITHUB_WORKSPACE}/build/pacts" \
+            --broker-base-url "http://localhost:9292" \
+            --consumer-app-version "${GITHUB_SHA}" \
+            --branch "${GITHUB_REF_NAME}"
+
+      - name: Checkout Provider Repo
+        uses: actions/checkout@v5
+        with:
+          repository: pravi976/cdc-docker-provider
+          path: provider-src
+          token: ${{ secrets.GH_REPO_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Ensure Gradle Wrapper Is Executable (Provider)
+        run: chmod +x ./gradlew
+        working-directory: provider-src
+
+      - name: Capture Provider Revision
+        run: |
+          PROVIDER_VERSION="$(git rev-parse HEAD)"
+          echo "PROVIDER_VERSION=${PROVIDER_VERSION}" >> "${GITHUB_ENV}"
+        working-directory: provider-src
+
+      - name: Verify Provider Against Published Contracts
+        run: ./gradlew --no-daemon clean test --tests "com.fedex.cdc.demo.provider.InventoryProviderPactVerificationTest" --stacktrace
+        working-directory: provider-src
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          PACT_BROKER_BASE_URL: http://localhost:9292
+          GITHUB_SHA: ${{ env.PROVIDER_VERSION }}
+          GITHUB_REF_NAME: main
+
+      - name: Record Provider Deployment (Baseline)
+        run: |
+          pact-broker record-deployment \
+            --broker-base-url "http://localhost:9292" \
+            --pacticipant "${PROVIDER_PACTICIPANT}" \
+            --version "${PROVIDER_VERSION}" \
+            --environment "${DEPLOY_ENV}"
+
+      - name: Can I Deploy Consumer
+        run: |
+          pact-broker can-i-deploy \
+            --broker-base-url "http://localhost:9292" \
+            --pacticipant "${CONSUMER_PACTICIPANT}" \
+            --version "${GITHUB_SHA}" \
+            --to-environment "${DEPLOY_ENV}" \
+            --retry-while-unknown 30 \
+            --retry-interval 10
+
+      - name: Record Consumer Deployment
+        run: |
+          pact-broker record-deployment \
+            --broker-base-url "http://localhost:9292" \
+            --pacticipant "${CONSUMER_PACTICIPANT}" \
+            --version "${GITHUB_SHA}" \
+            --environment "${DEPLOY_ENV}"
+
+      - name: Can I Deploy Provider
+        run: |
+          pact-broker can-i-deploy \
+            --broker-base-url "http://localhost:9292" \
+            --pacticipant "${PROVIDER_PACTICIPANT}" \
+            --version "${PROVIDER_VERSION}" \
+            --to-environment "${DEPLOY_ENV}" \
+            --retry-while-unknown 30 \
+            --retry-interval 10
