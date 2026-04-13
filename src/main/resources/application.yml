@@ -1,0 +1,36 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: supply-orders-consumer
+  datasource:
+    url: jdbc:h2:mem:supplyorders;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+  h2:
+    console:
+      enabled: true
+
+provider:
+  base-url: http://localhost:8082
+
+pact:
+  framework:
+    enabled: true
+    consumer-name: supply-orders-consumer
+    provider-name: supply-inventory-provider
+    scan:
+      rest-enabled: true
+      jms-enabled: false
+
+cdc:
+  expectations:
+    auto: true
+  consumer:
+    name: supply-orders-consumer
+

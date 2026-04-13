@@ -1,0 +1,159 @@
+name: Consumer CDC Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  JAVA_VERSION: "17"
+  CDC_FRAMEWORK_VERSION: ${{ vars.CDC_FRAMEWORK_VERSION }}
+  CDC_PACKAGES_OWNER: ${{ vars.CDC_PACKAGES_OWNER }}
+  CDC_PACKAGES_REPO: ${{ vars.CDC_PACKAGES_REPO }}
+  PACTICIPANT: supply-orders-consumer
+  DEPLOY_ENV: test
+
+jobs:
+  test-generate-and-publish-pact:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run Consumer Tests and Generate Pacts
+        run: gradle --no-daemon clean test bootJar --stacktrace
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Upload Pact Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: consumer-pacts
+          path: build/pacts/*.json
+          if-no-files-found: error
+
+      - name: Publish Pacts to Broker
+        if: ${{ secrets.PACT_BROKER_BASE_URL != '' }}
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}/build/pacts:/pacts" \
+            pactfoundation/pact-cli:latest \
+            pact-broker publish /pacts \
+            --broker-base-url "${PACT_BROKER_BASE_URL}" \
+            --broker-username "${PACT_BROKER_USERNAME}" \
+            --broker-password "${PACT_BROKER_PASSWORD}" \
+            --consumer-app-version "${GITHUB_SHA}" \
+            --branch "${GITHUB_REF_NAME}"
+        env:
+          PACT_BROKER_BASE_URL: ${{ secrets.PACT_BROKER_BASE_URL }}
+          PACT_BROKER_USERNAME: ${{ secrets.PACT_BROKER_USERNAME }}
+          PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
+
+      - name: Can I Deploy (Consumer)
+        if: ${{ secrets.PACT_BROKER_BASE_URL != '' }}
+        run: |
+          docker run --rm \
+            pactfoundation/pact-cli:latest \
+            pact-broker can-i-deploy \
+            --broker-base-url "${PACT_BROKER_BASE_URL}" \
+            --broker-username "${PACT_BROKER_USERNAME}" \
+            --broker-password "${PACT_BROKER_PASSWORD}" \
+            --pacticipant "${PACTICIPANT}" \
+            --version "${GITHUB_SHA}" \
+            --to-environment "${DEPLOY_ENV}"
+        env:
+          PACT_BROKER_BASE_URL: ${{ secrets.PACT_BROKER_BASE_URL }}
+          PACT_BROKER_USERNAME: ${{ secrets.PACT_BROKER_USERNAME }}
+          PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
+
+  dockerize-and-deploy:
+    runs-on: ubuntu-latest
+    needs: test-generate-and-publish-pact
+    if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Application Jar
+        run: gradle --no-daemon clean bootJar -x test --stacktrace
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Consumer Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/cdc-docker-consumer:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/cdc-docker-consumer:latest
+
+      - name: Set up kubectl
+        if: ${{ secrets.KUBE_CONFIG_DATA != '' }}
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        if: ${{ secrets.KUBE_CONFIG_DATA != '' }}
+        run: |
+          mkdir -p "${HOME}/.kube"
+          echo "${KUBE_CONFIG_DATA}" | base64 -d > "${HOME}/.kube/config"
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+
+      - name: Deploy Consumer to Kubernetes
+        if: ${{ secrets.KUBE_CONFIG_DATA != '' }}
+        run: |
+          sed "s|__IMAGE__|${DOCKERHUB_USERNAME}/cdc-docker-consumer:${GITHUB_SHA}|g" k8s/deployment.yaml | kubectl apply -f -
+          kubectl apply -f k8s/service.yaml
+          kubectl rollout status deployment/cdc-docker-consumer --timeout=180s
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+      - name: Record Consumer Deployment in Broker
+        if: ${{ secrets.PACT_BROKER_BASE_URL != '' }}
+        run: |
+          docker run --rm \
+            pactfoundation/pact-cli:latest \
+            pact-broker record-deployment \
+            --broker-base-url "${PACT_BROKER_BASE_URL}" \
+            --broker-username "${PACT_BROKER_USERNAME}" \
+            --broker-password "${PACT_BROKER_PASSWORD}" \
+            --pacticipant "${PACTICIPANT}" \
+            --version "${GITHUB_SHA}" \
+            --environment "${DEPLOY_ENV}"
+        env:
+          PACT_BROKER_BASE_URL: ${{ secrets.PACT_BROKER_BASE_URL }}
+          PACT_BROKER_USERNAME: ${{ secrets.PACT_BROKER_USERNAME }}
+          PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}

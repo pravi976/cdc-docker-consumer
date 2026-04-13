@@ -1,0 +1,55 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.3.4'
+    id 'io.spring.dependency-management' version '1.1.6'
+}
+
+group = 'com.fedex.cdc.demo'
+version = '1.0.0-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+ext {
+    springCloudVersion = '2023.0.3'
+    cdcFrameworkVersion = findProperty('cdcFrameworkVersion') ?: System.getenv('CDC_FRAMEWORK_VERSION') ?: '1.0.0-SNAPSHOT'
+    cdcPackagesOwner = findProperty('cdcPackagesOwner') ?: System.getenv('CDC_PACKAGES_OWNER') ?: 'pravi'
+    cdcPackagesRepo = findProperty('cdcPackagesRepo') ?: System.getenv('CDC_PACKAGES_REPO') ?: 'consumer-driven-contract-testing'
+}
+
+repositories {
+    mavenLocal()
+    maven {
+        url = uri("https://maven.pkg.github.com/${cdcPackagesOwner}/${cdcPackagesRepo}")
+        credentials {
+            username = findProperty('gpr.user') ?: System.getenv('GH_PACKAGES_USER') ?: System.getenv('GITHUB_ACTOR')
+            password = findProperty('gpr.key') ?: System.getenv('GH_PACKAGES_TOKEN') ?: System.getenv('GITHUB_TOKEN')
+        }
+    }
+    mavenCentral()
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+    }
+}
+
+dependencies {
+    implementation "com.fedex.cdc:cdc-pact-spring-boot-starter:${cdcFrameworkVersion}"
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
+    runtimeOnly 'com.h2database:h2'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    maxParallelForks = 1
+}

@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cdc-docker-consumer
+  labels:
+    app: cdc-docker-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cdc-docker-consumer
+  template:
+    metadata:
+      labels:
+        app: cdc-docker-consumer
+    spec:
+      containers:
+        - name: app
+          image: __IMAGE__
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8081
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: k8s
