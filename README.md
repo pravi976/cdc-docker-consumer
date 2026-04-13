@@ -5,11 +5,11 @@ Consumer Spring Boot app that uses `consumer-driven-contract-testing` to auto-ge
 ## What This Pipeline Does
 
 1. Runs consumer tests and auto-generates Pact files under `build/pacts`.
-2. Publishes Pact contracts to Pact Broker.
-3. Runs `can-i-deploy` for consumer version.
+2. Publishes Pact contracts to a shared GitHub branch (`contracts`).
+3. Triggers provider verification automatically.
+4. Waits for provider verification status file and enforces a `can-i-deploy` equivalent gate.
 4. Builds/pushes Docker image to Docker Hub.
 5. Deploys to Kubernetes (if kube secret is configured).
-6. Records deployment in Pact Broker.
 
 ## Decoupled Dependency Setup
 
@@ -31,12 +31,16 @@ Main dependency:
 ## Required GitHub Secrets
 
 - `GH_PACKAGES_TOKEN` (PAT with `read:packages`)
-- `PACT_BROKER_BASE_URL`
-- `PACT_BROKER_USERNAME`
-- `PACT_BROKER_PASSWORD`
+- `GH_REPO_DISPATCH_TOKEN` (classic PAT with `repo` scope to push/read shared contracts and dispatch provider workflow)
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
 - `KUBE_CONFIG_DATA` (base64 kubeconfig, optional for K8s deploy)
+
+## Optional GitHub Variables
+
+- `PROVIDER_REPO` (default: `pravi976/cdc-docker-provider`)
+- `SHARED_CONTRACT_REPO` (default: `pravi976/cdc-docker-consumer`)
+- `SHARED_CONTRACT_BRANCH` (default: `contracts`)
 
 ## Local Run
 
@@ -78,6 +82,14 @@ Workflow:
 ```
 
 Push to `main` (or run manually from Actions tab) to trigger full CDC flow.
+
+Shared contract files are published under:
+
+```text
+contracts/pacts/supply-orders-consumer/<consumer-sha>/*.json
+contracts/latest/supply-orders-consumer/latest.sha
+contracts/verification/supply-orders-consumer/<consumer-sha>/supply-inventory-provider-test.json
+```
 
 ## Kubernetes
 

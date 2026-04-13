@@ -1,4 +1,4 @@
-name: Consumer CDC Pipeline
+name: Consumer CDC Pipeline (Brokerless Shared Contracts)
 
 on:
   push:
@@ -14,41 +14,20 @@ env:
   CDC_PACKAGES_OWNER: ${{ vars.CDC_PACKAGES_OWNER }}
   CDC_PACKAGES_REPO: ${{ vars.CDC_PACKAGES_REPO }}
   PACTICIPANT: supply-orders-consumer
+  PROVIDER_PACTICIPANT: supply-inventory-provider
   DEPLOY_ENV: test
   PROVIDER_REPO: ${{ vars.PROVIDER_REPO || 'pravi976/cdc-docker-provider' }}
+  SHARED_CONTRACT_REPO: ${{ vars.SHARED_CONTRACT_REPO || 'pravi976/cdc-docker-consumer' }}
+  SHARED_CONTRACT_BRANCH: ${{ vars.SHARED_CONTRACT_BRANCH || 'contracts' }}
 
 jobs:
-  test-generate-and-publish-pact:
+  test-generate-and-publish-contract:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: pact
-          POSTGRES_USER: pact
-          POSTGRES_PASSWORD: pact
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U pact -d pact"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-      pact-broker:
-        image: pactfoundation/pact-broker:latest
-        env:
-          PACT_BROKER_DATABASE_ADAPTER: postgres
-          PACT_BROKER_DATABASE_HOST: postgres
-          PACT_BROKER_DATABASE_NAME: pact
-          PACT_BROKER_DATABASE_USERNAME: pact
-          PACT_BROKER_DATABASE_PASSWORD: pact
-        ports:
-          - 9292:9292
     permissions:
       contents: read
       packages: read
     steps:
-      - name: Checkout
+      - name: Checkout Consumer Repo
         uses: actions/checkout@v5
 
       - name: Set up Java
@@ -76,69 +55,109 @@ jobs:
           path: build/pacts/*.json
           if-no-files-found: error
 
-      - name: Wait for Pact Broker
-        run: |
-          for i in {1..60}; do
-            if curl -fsS http://localhost:9292 > /dev/null; then
-              echo "Pact Broker is ready."
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Pact Broker did not become ready in time."
-          exit 1
+      - name: Checkout Shared Contracts Repo/Branch
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.SHARED_CONTRACT_REPO }}
+          ref: ${{ env.SHARED_CONTRACT_BRANCH }}
+          path: contracts-repo
+          token: ${{ secrets.GH_REPO_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+        continue-on-error: true
 
-      - name: Install Pact Broker CLI
+      - name: Initialize Shared Contracts Branch If Missing
         run: |
-          gem install --user-install pact_broker-client --no-document
-          ruby -e 'print Gem.user_dir' > .gem_user_dir
-          GEM_USER_DIR="$(cat .gem_user_dir)"
-          echo "${GEM_USER_DIR}/bin" >> "${GITHUB_PATH}"
-
-      - name: Publish Pacts to Broker
-        run: |
-          PACT_BROKER_BASE_URL="${PACT_BROKER_BASE_URL:-http://localhost:9292}"
-          AUTH_ARGS=()
-          if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
-            AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
-          fi
-          pact-broker publish "${GITHUB_WORKSPACE}/build/pacts" \
-            --broker-base-url "${PACT_BROKER_BASE_URL}" \
-            "${AUTH_ARGS[@]}" \
-            --consumer-app-version "${GITHUB_SHA}" \
-            --branch "${GITHUB_REF_NAME}"
-        env:
-          PACT_BROKER_USERNAME: ${{ secrets.PACT_BROKER_USERNAME }}
-          PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
-
-      - name: Can I Deploy (Consumer)
-        run: |
-          PACT_BROKER_BASE_URL="${PACT_BROKER_BASE_URL:-http://localhost:9292}"
-          if [ "${PACT_BROKER_BASE_URL}" = "http://localhost:9292" ] || [ "${PACT_BROKER_BASE_URL}" = "http://127.0.0.1:9292" ]; then
-            echo "Skipping can-i-deploy for ephemeral local broker. Use shared broker URL to enforce cross-pipeline can-i-deploy."
+          if [ -d contracts-repo/.git ]; then
+            echo "Shared contracts branch exists."
             exit 0
           fi
-          AUTH_ARGS=()
-          if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
-            AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
-          fi
-          echo "Waiting for provider deployment/verification state in Pact Broker..."
-          pact-broker can-i-deploy \
-            --broker-base-url "${PACT_BROKER_BASE_URL}" \
-            "${AUTH_ARGS[@]}" \
-            --pacticipant "${PACTICIPANT}" \
-            --version "${GITHUB_SHA}" \
-            --to-environment "${DEPLOY_ENV}" \
-            --retry-while-unknown 30 \
-            --retry-interval 10
+          git clone "https://x-access-token:${GH_REPO_DISPATCH_TOKEN}@github.com/${SHARED_CONTRACT_REPO}.git" contracts-repo
+          cd contracts-repo
+          git checkout --orphan "${SHARED_CONTRACT_BRANCH}"
+          git rm -rf . || true
+          mkdir -p contracts
+          touch contracts/.gitkeep
+          git add .
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "Initialize shared contracts branch"
+          git push origin "${SHARED_CONTRACT_BRANCH}"
+          git checkout "${SHARED_CONTRACT_BRANCH}"
         env:
-          PACT_BROKER_BASE_URL: ${{ secrets.PACT_BROKER_BASE_URL }}
-          PACT_BROKER_USERNAME: ${{ secrets.PACT_BROKER_USERNAME }}
-          PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
+          GH_REPO_DISPATCH_TOKEN: ${{ secrets.GH_REPO_DISPATCH_TOKEN }}
+
+      - name: Publish Contract Files To Shared Branch
+        run: |
+          cd contracts-repo
+          mkdir -p "contracts/pacts/${PACTICIPANT}/${GITHUB_SHA}"
+          mkdir -p "contracts/latest/${PACTICIPANT}"
+          cp "${GITHUB_WORKSPACE}"/build/pacts/*.json "contracts/pacts/${PACTICIPANT}/${GITHUB_SHA}/"
+          echo "${GITHUB_SHA}" > "contracts/latest/${PACTICIPANT}/latest.sha"
+          cat > "contracts/latest/${PACTICIPANT}/metadata.json" <<EOF
+          {
+            "consumer": "${PACTICIPANT}",
+            "consumerVersion": "${GITHUB_SHA}",
+            "branch": "${GITHUB_REF_NAME}",
+            "publishedAt": "$(date -u +%FT%TZ)",
+            "sourceRepository": "${GITHUB_REPOSITORY}"
+          }
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add contracts
+          if git diff --cached --quiet; then
+            echo "No shared contract updates."
+            exit 0
+          fi
+          git commit -m "Publish contracts for ${PACTICIPANT}@${GITHUB_SHA}"
+          git push origin "${SHARED_CONTRACT_BRANCH}"
+
+      - name: Trigger Provider Contract Verification
+        run: |
+          if [ -z "${GH_REPO_DISPATCH_TOKEN:-}" ]; then
+            echo "GH_REPO_DISPATCH_TOKEN not set. Cannot trigger provider verification."
+            exit 1
+          fi
+          curl -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_REPO_DISPATCH_TOKEN}" \
+            https://api.github.com/repos/${PROVIDER_REPO}/dispatches \
+            -d "{\"event_type\":\"consumer-contract-updated\",\"client_payload\":{\"source_repo\":\"${GITHUB_REPOSITORY}\",\"source_sha\":\"${GITHUB_SHA}\",\"shared_contract_repo\":\"${SHARED_CONTRACT_REPO}\",\"shared_contract_branch\":\"${SHARED_CONTRACT_BRANCH}\",\"consumer_pacticipant\":\"${PACTICIPANT}\",\"provider_pacticipant\":\"${PROVIDER_PACTICIPANT}\",\"deploy_env\":\"${DEPLOY_ENV}\"}}"
+        env:
+          GH_REPO_DISPATCH_TOKEN: ${{ secrets.GH_REPO_DISPATCH_TOKEN }}
+
+      - name: Can I Deploy Equivalent (Wait For Provider Verification Status)
+        run: |
+          if [ -z "${GH_REPO_DISPATCH_TOKEN:-}" ]; then
+            echo "GH_REPO_DISPATCH_TOKEN not set. Cannot evaluate deployment gate."
+            exit 1
+          fi
+          STATUS_FILE="contracts/verification/${PACTICIPANT}/${GITHUB_SHA}/${PROVIDER_PACTICIPANT}-${DEPLOY_ENV}.json"
+          for i in {1..30}; do
+            rm -rf contracts-poll
+            git clone --depth 1 --branch "${SHARED_CONTRACT_BRANCH}" \
+              "https://x-access-token:${GH_REPO_DISPATCH_TOKEN}@github.com/${SHARED_CONTRACT_REPO}.git" contracts-poll
+            if [ -f "contracts-poll/${STATUS_FILE}" ]; then
+              echo "Found verification status: ${STATUS_FILE}"
+              cat "contracts-poll/${STATUS_FILE}"
+              RESULT="$(jq -r '.result' "contracts-poll/${STATUS_FILE}")"
+              if [ "${RESULT}" = "SUCCESS" ]; then
+                echo "Can I Deploy equivalent: YES"
+                exit 0
+              fi
+              echo "Can I Deploy equivalent: NO"
+              exit 1
+            fi
+            echo "Verification status not ready yet. Waiting..."
+            sleep 20
+          done
+          echo "Timed out waiting for provider verification status."
+          exit 1
+        env:
+          GH_REPO_DISPATCH_TOKEN: ${{ secrets.GH_REPO_DISPATCH_TOKEN }}
 
   dockerize-and-deploy:
     runs-on: ubuntu-latest
-    needs: test-generate-and-publish-pact
+    needs: test-generate-and-publish-contract
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -177,71 +196,3 @@ jobs:
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
-
-      - name: Configure kubeconfig
-        run: |
-          if [ -z "${KUBE_CONFIG_DATA:-}" ]; then
-            echo "KUBE_CONFIG_DATA not set. Skipping kubeconfig setup."
-            exit 0
-          fi
-          mkdir -p "${HOME}/.kube"
-          echo "${KUBE_CONFIG_DATA}" | base64 -d > "${HOME}/.kube/config"
-        env:
-          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
-
-      - name: Deploy Consumer to Kubernetes
-        run: |
-          if [ -z "${KUBE_CONFIG_DATA:-}" ] || [ -z "${DOCKERHUB_USERNAME:-}" ]; then
-            echo "Kubernetes config or Docker Hub username not set. Skipping Kubernetes deploy."
-            exit 0
-          fi
-          sed "s|__IMAGE__|${DOCKERHUB_USERNAME}/cdc-docker-consumer:${GITHUB_SHA}|g" k8s/deployment.yaml | kubectl apply -f -
-          kubectl apply -f k8s/service.yaml
-          kubectl rollout status deployment/cdc-docker-consumer --timeout=180s
-        env:
-          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-
-      - name: Record Consumer Deployment in Broker
-        run: |
-          PACT_BROKER_BASE_URL="${PACT_BROKER_BASE_URL:-http://localhost:9292}"
-          if [ "${PACT_BROKER_BASE_URL}" = "http://localhost:9292" ] || [ "${PACT_BROKER_BASE_URL}" = "http://127.0.0.1:9292" ]; then
-            echo "Skipping deployment record for ephemeral local broker."
-            exit 0
-          fi
-          AUTH_ARGS=()
-          if [ -n "${PACT_BROKER_USERNAME:-}" ] && [ -n "${PACT_BROKER_PASSWORD:-}" ]; then
-            AUTH_ARGS+=(--broker-username "${PACT_BROKER_USERNAME}" --broker-password "${PACT_BROKER_PASSWORD}")
-          fi
-          pact-broker record-deployment \
-            --broker-base-url "${PACT_BROKER_BASE_URL}" \
-            "${AUTH_ARGS[@]}" \
-            --pacticipant "${PACTICIPANT}" \
-            --version "${GITHUB_SHA}" \
-            --environment "${DEPLOY_ENV}"
-        env:
-          PACT_BROKER_BASE_URL: ${{ secrets.PACT_BROKER_BASE_URL }}
-          PACT_BROKER_USERNAME: ${{ secrets.PACT_BROKER_USERNAME }}
-          PACT_BROKER_PASSWORD: ${{ secrets.PACT_BROKER_PASSWORD }}
-
-  notify-provider:
-    runs-on: ubuntu-latest
-    needs: test-generate-and-publish-pact
-    if: ${{ github.event_name != 'repository_dispatch' && github.ref == 'refs/heads/main' }}
-    steps:
-      - name: Trigger Provider Validation Workflow
-        run: |
-          if [ -z "${GH_REPO_DISPATCH_TOKEN:-}" ]; then
-            echo "GH_REPO_DISPATCH_TOKEN not set. Skipping provider dispatch."
-            exit 0
-          fi
-          curl -sS -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_REPO_DISPATCH_TOKEN}" \
-            https://api.github.com/repos/${PROVIDER_REPO}/dispatches \
-            -d "{\"event_type\":\"consumer-contract-updated\",\"client_payload\":{\"source_repo\":\"${GITHUB_REPOSITORY}\",\"source_sha\":\"${GITHUB_SHA}\",\"source_workflow\":\"consumer-cdc\"}}"
-        env:
-          GH_REPO_DISPATCH_TOKEN: ${{ secrets.GH_REPO_DISPATCH_TOKEN }}
