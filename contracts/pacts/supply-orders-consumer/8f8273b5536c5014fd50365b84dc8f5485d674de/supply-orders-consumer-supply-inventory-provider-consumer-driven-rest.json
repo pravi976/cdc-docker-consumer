@@ -1,0 +1,176 @@
+{
+  "consumer" : {
+    "name" : "supply-orders-consumer"
+  },
+  "provider" : {
+    "name" : "supply-inventory-provider"
+  },
+  "interactions" : [ {
+    "description" : "auto rest expectation GET /api/v1/inventory/{sku}",
+    "providerStates" : [ ],
+    "request" : {
+      "method" : "GET",
+      "path" : "/api/v1/inventory/{sku}",
+      "query" : { },
+      "headers" : {
+        "Accept" : "application/json"
+      },
+      "body" : null
+    },
+    "response" : {
+      "status" : 200,
+      "headers" : {
+        "Content-Type" : "application/json"
+      },
+      "body" : {
+        "sku" : "root.sku-value",
+        "availableQty" : 101,
+        "warehouseCode" : "root.warehouseCode-value",
+        "status" : "root.status-value"
+      },
+      "matchingRules" : {
+        "body" : {
+          "$.sku" : {
+            "matchers" : [ {
+              "match" : "type"
+            } ],
+            "combine" : "AND"
+          },
+          "$.availableQty" : {
+            "matchers" : [ {
+              "match" : "integer"
+            } ],
+            "combine" : "AND"
+          },
+          "$.warehouseCode" : {
+            "matchers" : [ {
+              "match" : "type"
+            } ],
+            "combine" : "AND"
+          },
+          "$.status" : {
+            "matchers" : [ {
+              "match" : "type"
+            } ],
+            "combine" : "AND"
+          }
+        }
+      }
+    }
+  }, {
+    "description" : "auto rest expectation POST /api/v1/inventory/reservations",
+    "providerStates" : [ ],
+    "request" : {
+      "method" : "POST",
+      "path" : "/api/v1/inventory/reservations",
+      "query" : { },
+      "headers" : {
+        "Accept" : "application/json"
+      },
+      "body" : {
+        "reservationId" : "root.reservationId-value",
+        "sku" : "root.sku-value",
+        "requestedQty" : 101,
+        "orderId" : "root.orderId-value",
+        "shipNode" : "root.shipNode-value",
+        "priority" : "root.priority-value"
+      },
+      "matchingRules" : {
+        "body" : {
+          "$.reservationId" : {
+            "matchers" : [ {
+              "match" : "type"
+            } ],
+            "combine" : "AND"
+          },
+          "$.sku" : {
+            "matchers" : [ {
+              "match" : "type"
+            } ],
+            "combine" : "AND"
+          },
+          "$.requestedQty" : {
+            "matchers" : [ {
+              "match" : "integer"
+            } ],
+            "combine" : "AND"
+          },
+          "$.orderId" : {
+            "matchers" : [ {
+              "match" : "type"
+            } ],
+            "combine" : "AND"
+          },
+          "$.shipNode" : {
+            "matchers" : [ {
+              "match" : "type"
+            } ],
+            "combine" : "AND"
+          },
+          "$.priority" : {
+            "matchers" : [ {
+              "match" : "type"
+            } ],
+            "combine" : "AND"
+          }
+        }
+      }
+    },
+    "response" : {
+      "status" : 200,
+      "headers" : {
+        "Content-Type" : "application/json"
+      },
+      "body" : {
+        "reservationId" : "root.reservationId-value",
+        "sku" : "root.sku-value",
+        "reservedQty" : 101,
+        "reservationStatus" : "root.reservationStatus-value",
+        "reasonCode" : "root.reasonCode-value"
+      },
+      "matchingRules" : {
+        "body" : {
+          "$.reservationId" : {
+            "matchers" : [ {
+              "match" : "type"
+            } ],
+            "combine" : "AND"
+          },
+          "$.sku" : {
+            "matchers" : [ {
+              "match" : "type"
+            } ],
+            "combine" : "AND"
+          },
+          "$.reservedQty" : {
+            "matchers" : [ {
+              "match" : "integer"
+            } ],
+            "combine" : "AND"
+          },
+          "$.reservationStatus" : {
+            "matchers" : [ {
+              "match" : "type"
+            } ],
+            "combine" : "AND"
+          },
+          "$.reasonCode" : {
+            "matchers" : [ {
+              "match" : "type"
+            } ],
+            "combine" : "AND"
+          }
+        }
+      }
+    }
+  } ],
+  "metadata" : {
+    "pactSpecification" : {
+      "version" : "3.0.0"
+    },
+    "framework" : {
+      "name" : "consumer-driven-contract-testing",
+      "contractType" : "REST"
+    }
+  }
+}

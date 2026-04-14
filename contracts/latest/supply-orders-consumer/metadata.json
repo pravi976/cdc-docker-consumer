@@ -1,7 +1,7 @@
 {
   "consumer": "supply-orders-consumer",
-  "consumerVersion": "7c1e5c26adf9bccc828bf25db54d6c065d7c87e8",
+  "consumerVersion": "8f8273b5536c5014fd50365b84dc8f5485d674de",
   "branch": "main",
-  "publishedAt": "2026-04-14T07:43:31Z",
+  "publishedAt": "2026-04-14T09:22:01Z",
   "sourceRepository": "pravi976/cdc-docker-consumer"
 }
