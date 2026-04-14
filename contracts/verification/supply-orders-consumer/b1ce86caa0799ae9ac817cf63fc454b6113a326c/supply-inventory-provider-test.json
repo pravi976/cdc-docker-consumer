@@ -2,10 +2,10 @@
   "consumer": "supply-orders-consumer",
   "consumerVersion": "b1ce86caa0799ae9ac817cf63fc454b6113a326c",
   "provider": "supply-inventory-provider",
-  "providerVersion": "b96b8734d0bf6665fabd82bebea364cdd9a05ba8",
+  "providerVersion": "9588abd876342ead19c815f5fa2a6634d0c68a73",
   "environment": "test",
   "result": "SUCCESS",
-  "verifiedAt": "2026-04-13T16:14:17Z",
+  "verifiedAt": "2026-04-14T07:42:48Z",
   "sourceRepository": "pravi976/cdc-docker-provider",
-  "sourceRunId": "24353931245"
+  "sourceRunId": "24387136863"
 }
